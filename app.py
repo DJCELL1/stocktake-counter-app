@@ -137,4 +137,92 @@ df_area = df[df["Area"] == selected_area].reset_index(drop=True)
 area_key = f"counts_{selected_area}"
 index_key = f"index_{selected_area}"
 finished_key = f"finished_{selected_area}"
+# --- Initialize session state ---
+if area_key not in st.session_state:
+    st.session_state[area_key] = [0 for _ in range(len(df_area))]
+    st.session_state[index_key] = 0
+    st.session_state[finished_key] = False
+
+i = st.session_state[index_key]
+counts = st.session_state[area_key]
+
+st.subheader(f"Area: {selected_area} | Item {i+1} of {len(df_area)}")
+st.write(f"**Description:** {df_area.iloc[i]['Description']}")
+st.markdown(f"### Current Count: {counts[i]}")
+
+# --- Keyboard input ---
+new_count = st.number_input(
+    "Enter count for this item and press Enter ⏎",
+    min_value=0,
+    value=counts[i],
+    step=1,
+    key=f"input_{selected_area}_{i}"
+)
+
+# Update count if changed
+if new_count != counts[i]:
+    counts[i] = int(new_count)
+
+# --- Navigation buttons ---
+col1, col2, col3 = st.columns(3)
+if col1.button("⬅ Previous", use_container_width=True):
+    if st.session_state[index_key] > 0:
+        st.session_state[index_key] -= 1
+        st.rerun()
+
+if col2.button("➡ Next", use_container_width=True):
+    if st.session_state[index_key] < len(df_area) - 1:
+        st.session_state[index_key] += 1
+        st.rerun()
+
+if col3.button("✅ Finish Area", use_container_width=True):
+    st.session_state[finished_key] = True
+    st.rerun()
+
+# --- When area is finished ---
+if st.session_state[finished_key]:
+    df_area["Qty"] = counts
+    st.success(f"✅ Finished counting area: {selected_area}")
+
+    # Update main DataFrame
+    for idx, row in df_area.iterrows():
+        df.loc[(df["Area"] == selected_area) & (df["Description"] == row["Description"]), "Qty"] = row["Qty"]
+
+    total_items = len(df_area)
+    total_counted = sum(df_area["Qty"])
+    zero_items = len(df_area[df_area["Qty"] == 0])
+
+    st.markdown(f"### Summary for {selected_area}")
+    st.write(f"- Total items: **{total_items}**")
+    st.write(f"- Total counted: **{total_counted}**")
+    st.write(f"- Items with zero count: **{zero_items}**")
+
+# --- Global summary ---
+st.markdown("---")
+st.markdown("## 📦 All Areas Summary")
+
+full_df = df.copy()
+for area in df["Area"].unique():
+    key = f"counts_{area}"
+    if key in st.session_state:
+        full_df.loc[full_df["Area"] == area, "Qty"] = st.session_state[key]
+
+summary = (
+    full_df.groupby("Area", as_index=False)
+    .agg(Total_Items=("Description", "count"), Total_Qty=("Qty", "sum"))
+)
+st.dataframe(summary, use_container_width=True)
+
+# --- Download CSV ---
+timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+buffer = io.StringIO()
+full_df.to_csv(buffer, index=False)
+buffer.seek(0)
+
+st.download_button(
+    "📥 Download All Results (CSV)",
+    data=buffer.getvalue(),
+    file_name=f"stocktake_results_{timestamp}.csv",
+    mime="text/csv"
+)
 
