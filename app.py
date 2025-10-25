@@ -136,6 +136,5 @@ df_area = df[df["Area"] == selected_area].reset_index(drop=True)
 # Session state setup
 area_key = f"counts_{selected_area}"
 index_key = f"index_{selected_area}"
-finished_key = f"finished_{selected_area
-
+finished_key = f"finished_{selected_area}"
 
