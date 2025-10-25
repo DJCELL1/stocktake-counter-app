@@ -15,29 +15,29 @@ st.title("📦 Stocktake Counter with Areas")
 uploaded_file = st.file_uploader("Upload your product file (CSV or Excel)", type=["csv", "xlsx"])
 
 if uploaded_file:
-    # Read the file
+    # Load file
     if uploaded_file.name.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
     else:
         df = pd.read_excel(uploaded_file)
 
-    # Normalize headers
+    # Normalize column names
     df.columns = [c.strip().capitalize() for c in df.columns]
 
-    # Check required columns
+    # Check for required columns
     required_cols = {"Area", "Description", "Qty"}
     if not required_cols.issubset(df.columns):
         st.error("Your file must have columns named 'Area', 'Description', and 'Qty'.")
         st.stop()
 
-    # --- Step 2: Select area to work on ---
+    # --- Step 2: Select Area ---
     areas = df["Area"].dropna().unique()
     selected_area = st.selectbox("Select Area to Count", areas)
 
     # Filter by selected area
     df_area = df[df["Area"] == selected_area].reset_index(drop=True)
 
-    # Initialize session state for this area
+    # Initialize session state for area
     area_key = f"counts_{selected_area}"
     index_key = f"index_{selected_area}"
 
@@ -93,7 +93,7 @@ if uploaded_file:
             st.session_state[index_key] += 1
             st.rerun()
 
-    # --- Finish for this area ---
+    # --- Area completion ---
     if st.session_state.get(f"finished_{selected_area}", False):
         df_area["Qty"] = counts
         st.success(f"✅ Finished counting area: {selected_area}")
@@ -102,7 +102,7 @@ if uploaded_file:
         for idx, row in df_area.iterrows():
             df.loc[(df["Area"] == selected_area) & (df["Description"] == row["Description"]), "Qty"] = row["Qty"]
 
-        # Summary
+        # Summary for area
         total_items = len(df_area)
         total_counted = sum(df_area["Qty"])
         zero_items = len(df_area[df_area["Qty"] == 0])
@@ -111,46 +111,6 @@ if uploaded_file:
         st.write(f"- Total items: **{total_items}**")
         st.write(f"- Total counted: **{total_counted}**")
         st.write(f"- Items with zero count: **{zero_items}**")
-
-        # Convert to CSV
-        buffer = io.StringIO()
-        df.to_csv(buffer, index=False)
-        buffer.seek(0)
-
-        st.download_button(
-            "📥 Download Updated File",
-            data=buffer.getvalue(),
-            file_name=f"stocktake_results_{selected_area}.csv",
-            mime="text/csv"
-        )
-
-        # --- Email results ---
-        sender_email = "stocktake.bot@gmail.com"  # dummy sender
-        receiver_email = "lopatifam@hotmail.com"
-        subject = f"Stocktake Results - {selected_area}"
-        body = f"Attached are your stocktake results for area: {selected_area}."
-
-        msg = MIMEMultipart()
-        msg["From"] = sender_email
-        msg["To"] = receiver_email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain"))
-
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(buffer.getvalue().encode("utf-8"))
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f"attachment; filename=stocktake_results_{selected_area}.csv")
-        msg.attach(part)
-
-        try:
-            with smtplib.SMTP("smtp.gmail.com", 587) as server:
-                server.starttls()
-                # Replace with valid app password if using a real Gmail sender
-                server.login(sender_email, "your-app-password")
-                server.send_message(msg)
-            st.success(f"📧 Email sent to {receiver_email}")
-        except Exception as e:
-            st.warning(f"Email not sent (likely missing credentials): {e}")
 
     # --- Restart or Switch area ---
     st.markdown("---")
@@ -163,4 +123,66 @@ if uploaded_file:
     if col2.button("🏁 Switch Area"):
         st.session_state[index_key] = 0
         st.rerun()
+
+    # --- Global summary ---
+    st.markdown("## 📦 All Areas Summary")
+
+    # Combine all areas
+    full_df = df.copy()
+    for area in df["Area"].unique():
+        key = f"counts_{area}"
+        if key in st.session_state:
+            area_counts = st.session_state[key]
+            full_df.loc[full_df["Area"] == area, "Qty"] = area_counts
+
+    summary = (
+        full_df.groupby("Area", as_index=False)
+        .agg(Total_Items=("Description", "count"), Total_Qty=("Qty", "sum"))
+    )
+    st.dataframe(summary, use_container_width=True)
+
+    # --- Download & Email buttons ---
+    colA, colB = st.columns(2)
+
+    # 📥 Download All
+    buffer_all = io.StringIO()
+    full_df.to_csv(buffer_all, index=False)
+    buffer_all.seek(0)
+    colA.download_button(
+        "📥 Download All Results (CSV)",
+        data=buffer_all.getvalue(),
+        file_name="stocktake_results_all_areas.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+    # 📧 Send All via Email
+    if colB.button("📧 Send All Results via Email", use_container_width=True):
+        sender_email = "stocktake.bot@gmail.com"
+        receiver_email = "lopatifam@hotmail.com"
+        subject = "Full Stocktake Results"
+        body = "Attached are the complete stocktake results for all areas."
+
+        msg = MIMEMultipart()
+        msg["From"] = sender_email
+        msg["To"] = receiver_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain"))
+
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(buffer_all.getvalue().encode("utf-8"))
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment; filename=stocktake_results_all_areas.csv")
+        msg.attach(part)
+
+        try:
+            with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                server.starttls()
+                # Replace with a valid Gmail app password if you want to actually send mail
+                server.login(sender_email, "your-app-password")
+                server.send_message(msg)
+            st.success(f"📧 Email sent to {receiver_email}")
+        except Exception as e:
+            st.warning(f"Email not sent (likely missing credentials): {e}")
+
 
