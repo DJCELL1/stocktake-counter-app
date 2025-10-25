@@ -1,0 +1,9 @@
+# Streamlit cache
+.streamlit/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+.env
+venv/
